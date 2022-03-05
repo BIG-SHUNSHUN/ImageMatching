@@ -1,2 +1,2 @@
 # ImageMatching
-Image matching frameword developed with c++
+Image matching framework developed with c++
