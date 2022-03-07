@@ -40,9 +40,19 @@ namespace shun
 		PhaseCongruency _pc;
 		int _patchSize = 96;
 		int _ns = 6;
+		int _ptsNum = 1000;
 
 		void DetectFeature(Mat imgIn, std::vector<KeyPoint>& keyPoints);
 		Mat BuildMIM(std::vector<Mat>& CS);
+	};
+
+	class Matcher
+	{
+	public:
+
+
+	private:
+
 	};
 
 }

@@ -7,6 +7,7 @@
 #include <vector>
 #include <opencv2/opencv.hpp>
 #include "wavelet.h"
+#include "matchfuncs.h"
 
 
 using namespace cv;
@@ -15,41 +16,51 @@ using namespace std;
 #include "phase.h"
 #include "features.h"
 
-int PhaseCongruencyDemo()
+void PhaseCongruencyDemo()
 {
 	string inputFileName = "../image/fig.png";
 	Mat image = imread(inputFileName, IMREAD_GRAYSCALE);
 	if (image.empty())
 	{
 		cout << "Cannot read image file " << inputFileName << endl;
-		return -1;
+		return;
 	}
 
-	//auto size = image.size() * 3;
-	//resize(image, image, size);
-	int64 start = getTickCount();
-
+	int start = getTickCount();
 	PhaseCongruency pc;
 	pc.Calc(image);
 
 	Mat edge, corner;
 	pc.Feature(edge, corner);
-
-	int64 end = getTickCount();
-	cout << "time = " << (end - start) / getTickFrequency() * 1000 << endl;
+	int end = getTickCount();
+	cout << (end - start) / getTickFrequency() << endl;
 
 	// namedWindow("image");
 	imshow("edges", edge);
 	imshow("corners", corner);
 	waitKey(0);
 	destroyAllWindows();
+}
 
-	return 0;
+void RIFTDemo()
+{
+	string sarFile = "../image/pair3.tif";
+	string opticalFile = "../image/pair4.tif";
+
+	Mat sar = imread(sarFile, IMREAD_GRAYSCALE);
+	Mat optical = imread(opticalFile, IMREAD_GRAYSCALE);
+
+	shun::RIFT rift;
+	vector<KeyPoint> keyPtsSar, keyPtsOptical;
+	Mat desSar, desOptical;
+
+	rift.DetectAndCompute(sar, keyPtsSar, desSar);
+	rift.DetectAndCompute(optical, keyPtsOptical, desOptical);
 }
 
 int main(int argc, char** argv)
 {
-	PhaseCongruencyDemo();
+	RIFTDemo();
 
 
 	string fileL = "../image/pair4.tif";
@@ -62,7 +73,6 @@ int main(int argc, char** argv)
 	cvtColor(imgL, imgL_gray, COLOR_BGR2GRAY);
 	cvtColor(imgR, imgR_gray, COLOR_BGR2GRAY);
 
-	
 	{
 		shun::HarrisDetector detector;
 		vector<Point> pts;
@@ -86,8 +96,6 @@ int main(int argc, char** argv)
 		imshow("ShiTomashi", imgDraw);
 		waitKey(0);
 	}
-
-
 
 	destroyAllWindows();
 

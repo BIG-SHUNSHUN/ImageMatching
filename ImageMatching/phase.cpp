@@ -39,7 +39,7 @@ Mat LowPassFilter(Size size, double cutOff, int n)
 	Helper(cols, xRange);
 	Helper(rows, yRange);
 
-	Mat radius = Mat::zeros(rows, cols, CV_64FC1);
+	Mat radius = Mat::zeros(rows, cols, ELEM_TYPE);
 	for (int r = 0; r < rows; r++)
 	{
 		double* ptr = radius.ptr<double>(r);
@@ -58,9 +58,6 @@ Mat LowPassFilter(Size size, double cutOff, int n)
 	return radius;
 }
 
-#define MAT_TYPE CV_64FC1
-#define MAT_TYPE_CNV CV_64F
-
 // Making a _filter
 // src & dst arrays of equal size & type
 PhaseCongruency::PhaseCongruency(int _nScale, int _nOrient)
@@ -75,35 +72,29 @@ PhaseCongruency::PhaseCongruency(int _nScale, int _nOrient)
 void PhaseCongruency::Calc(Mat src)
 {
 	Initialize(src.size());
-	_size = src.size();
-
-	int rows = src.rows;
-	int cols = src.cols;
 
 	// expand input image to optimal size
-	Mat planes[] = { Mat_<double>(src), Mat::zeros(src.size(), CV_64FC1) };
+	Mat planes[] = { Mat_<double>(src), Mat::zeros(src.size(), ELEM_TYPE) };
 	Mat imageFFT;
 	merge(planes, 2, imageFFT);         // Add to the expanded another plane with zeros
 	dft(imageFFT, imageFFT);            // this way the result may fit in the source matrix
 
-	Mat pcSum = Mat::zeros(src.size(), CV_64FC1);
+	Mat pcSum = Mat::zeros(src.size(), ELEM_TYPE);
 	Mat complex[2];
 	Mat An;
 	Mat sorted;
-	Mat maxAn = Mat::zeros(src.size(), CV_64FC1);
+	Mat maxAn = Mat::zeros(src.size(), ELEM_TYPE);
     for (int o = 0; o < _nOrient; o++)
     {
-		Mat sumE = Mat::zeros(src.size(), CV_64FC1);
-		Mat sumO = Mat::zeros(src.size(), CV_64FC1);
-		Mat sumAn = Mat::zeros(src.size(), CV_64FC1);
-		Mat energy = Mat::zeros(src.size(), CV_64FC1);
+		Mat sumE = Mat::zeros(src.size(), ELEM_TYPE);
+		Mat sumO = Mat::zeros(src.size(), ELEM_TYPE);
+		Mat sumAn = Mat::zeros(src.size(), ELEM_TYPE);
+		Mat energy = Mat::zeros(src.size(), ELEM_TYPE);
 		double tau = 0;
 		
         for (int s = 0; s < _nScale; s++)
         {
-			Mat filter = _filter[o * _nScale + s];
             mulSpectrums(imageFFT, _filter[o * _nScale + s], _eo[s][o], 0); // Convolution
-			Mat tmpEO = _eo[s][o];
 			idft(_eo[s][o], _eo[s][o], DFT_SCALE);
 
 			split(_eo[s][o], complex);
@@ -187,9 +178,9 @@ void PhaseCongruency::Calc(Mat src)
 
 void PhaseCongruency::Feature(cv::Mat& outEdges, cv::Mat& outCorners)
 {
-	Mat covx2 = Mat::zeros(_size, CV_64FC1);
-	Mat covy2 = Mat::zeros(_size, CV_64FC1);
-	Mat covxy = Mat::zeros(_size, CV_64FC1);
+	Mat covx2 = Mat::zeros(_size, ELEM_TYPE);
+	Mat covy2 = Mat::zeros(_size, ELEM_TYPE);
+	Mat covxy = Mat::zeros(_size, ELEM_TYPE);
 	for (int o = 0; o < _nOrient; o++)
 	{
 		double angle = o * M_PI / _nOrient;
@@ -221,6 +212,7 @@ void PhaseCongruency::Feature(cv::Mat& outEdges, cv::Mat& outCorners)
 
 void PhaseCongruency::Initialize(Size size)
 {
+	_size = size;
 	int rows = size.height;
 	int cols = size.width;
 
@@ -233,8 +225,8 @@ void PhaseCongruency::Initialize(Size size)
 	// [x,y] = meshgrid(xrange, yrange);
 	// radius = sqrt(x.^2 + y.^2);       
 	// theta = atan2(-y, x);
-	Mat radius = Mat::zeros(rows, cols, CV_64FC1);
-	Mat theta = Mat::zeros(rows, cols, CV_64FC1);
+	Mat radius = Mat::zeros(rows, cols, ELEM_TYPE);
+	Mat theta = Mat::zeros(rows, cols, ELEM_TYPE);
 	for (int r = 0; r < rows; r++)
 	{
 		double* ptrRadius = radius.ptr<double>(r);
@@ -266,13 +258,12 @@ void PhaseCongruency::Initialize(Size size)
 	}
 
 	Mat matArr[2];
-	matArr[0] = Mat::zeros(rows, cols, CV_64FC1);
-	matArr[1] = Mat::zeros(rows, cols, CV_64FC1);
-	Mat spread = Mat::zeros(rows, cols, CV_64FC1);
+	matArr[0] = Mat::zeros(rows, cols, ELEM_TYPE);
+	matArr[1] = Mat::zeros(rows, cols, ELEM_TYPE);
+	Mat spread = Mat::zeros(rows, cols, ELEM_TYPE);
 	for (int o = 0; o < _nOrient; o++)
 	{
 		double angle = o * M_PI / _nOrient;
-
 		for (int r = 0; r < rows; r++)
 		{
 			double* ptr = theta.ptr<double>(r);

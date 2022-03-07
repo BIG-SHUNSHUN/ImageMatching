@@ -81,8 +81,8 @@
     <LinkIncremental>true</LinkIncremental>
     <OutDir>$(SolutionDir)bin\$(Configuration)\</OutDir>
     <IntDir>$(SolutionDir)build\$(Configuration)\$(Platform)\</IntDir>
-    <IncludePath>C:\Libs\opencv451\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Users\shunshun\Desktop\programming\ImageMatching\lib\debug;C:\Libs\opencv451\x64\vc15\lib;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\Libs\OpenCV451_debug\include;C:\Libs\Eigen3.4;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Users\shunshun\Desktop\programming\ImageMatching\lib\debug;C:\Libs\OpenCV451_debug\x64\vc15\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
@@ -95,8 +95,8 @@
     <LinkIncremental>false</LinkIncremental>
     <OutDir>$(SolutionDir)bin\$(Configuration)\</OutDir>
     <IntDir>$(SolutionDir)build\$(Configuration)\$(Platform)\</IntDir>
-    <IncludePath>C:\Libs\opencv451\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Libs\opencv451\x64\vc15\lib;C:\Users\shunshun\Desktop\programming\ImageMatching\lib\release;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\Libs\OpenCV451_release\include;C:\Libs\Eigen3.4;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Libs\OpenCV451_release\x64\vc15\lib;C:\Users\shunshun\Desktop\programming\ImageMatching\lib\release;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>

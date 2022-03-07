@@ -114,7 +114,7 @@ void shun::RIFT::DetectAndCompute(Mat imgIn, vector<KeyPoint>& keyPoints, Mat& d
 
 	int nOrient = _pc._nOrient;
 	int nScale = _pc._nScale;
-	EO eo = _pc.GetEO();
+	EO eo = _pc._eo;
 	vector<Mat> CS(nOrient);
 	for (int o = 0; o < nOrient; o++)
 	{
@@ -130,12 +130,9 @@ void shun::RIFT::DetectAndCompute(Mat imgIn, vector<KeyPoint>& keyPoints, Mat& d
 		}
 		CS[o] = tmp;
 	}
-
 	Mat MIM = BuildMIM(CS);
 
-	Mat des = Mat::zeros(_ns * _ns * nOrient, keyPoints.size(), CV_64FC1);
-	vector<bool> mask(keyPoints.size(), true);
-
+	descriptors.create(_ns * _ns * nOrient, keyPoints.size(), CV_64FC1);
 	for (int i = 0; i < keyPoints.size(); i++)
 	{
 		int x = keyPoints[i].pt.x;
@@ -145,12 +142,6 @@ void shun::RIFT::DetectAndCompute(Mat imgIn, vector<KeyPoint>& keyPoints, Mat& d
 		int y1 = y - _patchSize / 2;
 		int x2 = x + _patchSize / 2;
 		int y2 = y + _patchSize / 2;
-
-		if (x1 < 0 || y1 < 0 || x2 >= imgIn.cols || y2 >= imgIn.rows)
-		{
-			mask[i] = false;
-			continue;
-		}
 
 		Mat patch(MIM, Rect(x1, y1, x2 - x1 + 1, y2 - y1 + 1));
 		int ys = patch.rows;
@@ -166,11 +157,11 @@ void shun::RIFT::DetectAndCompute(Mat imgIn, vector<KeyPoint>& keyPoints, Mat& d
 				int xc1 = round(k * step);
 				int xc2 = round((k + 1) * step);
 
-				Mat clip(patch, Rect(xc1, yc1, xc2 - xc1 + 1, yc2 - yc1 + 1));
+				Mat clip(patch, Rect(xc1, yc1, xc2 - xc1, yc2 - yc1));
 
 				Mat hist;
-				float ranges[] = { 1, _ns };
-				const float* histRange = ranges;
+				float ranges[] = { 1, _ns + 1 };
+				const float* histRange = { ranges };
 				calcHist(&clip, 1, 0, Mat(), hist, 1, &_ns, &histRange);
 
 				hist.convertTo(hist, CV_64FC1);
@@ -183,22 +174,50 @@ void shun::RIFT::DetectAndCompute(Mat imgIn, vector<KeyPoint>& keyPoints, Mat& d
 		if (normVal != 0)
 			RIFT_des = RIFT_des / normVal;
 
-		RIFT_des.copyTo(des.col(i));
+		RIFT_des.copyTo(descriptors.col(i));
 	}
+}
+
+bool PtsCompare(const KeyPoint& lhs, const KeyPoint& rhs)
+{
+	return lhs.response > rhs.response;
 }
 
 void shun::RIFT::DetectFeature(Mat imgIn, vector<KeyPoint>& keyPoints)
 {
-	PhaseCongruency pc;
-	pc.Calc(imgIn);
+	_pc.Calc(imgIn);
 
 	Mat M, m;
-	pc.Feature(M, m);
+	_pc.Feature(M, m);
 
+	normalize(M, M, 0, 255, NORM_MINMAX);
+	M.convertTo(M, CV_8UC1);
+
+	vector<KeyPoint> pts;
 	Ptr<FastFeatureDetector> detector = FastFeatureDetector::create();
-	detector->detect(M, keyPoints);
+	detector->detect(M, pts);
 
-	// TODO: ÌØÕ÷µã¹ýÂË
+	sort(pts.begin(), pts.end(), PtsCompare);
+
+	for (int i = 0; i < pts.size() && i < _ptsNum; i++)
+	{
+		int x = pts[i].pt.x;
+		int y = pts[i].pt.y;
+
+		int x1 = x - _patchSize / 2;
+		int y1 = y - _patchSize / 2;
+		int x2 = x + _patchSize / 2;
+		int y2 = y + _patchSize / 2;
+
+		if (x1 < 0 || y1 < 0 || x2 >= imgIn.cols || y2 >= imgIn.rows)
+		{
+			continue;
+		}
+		else
+		{
+			keyPoints.push_back(pts[i]);
+		}
+	}
 }
 
 Mat shun::RIFT::BuildMIM(vector<Mat>& CS)
@@ -223,7 +242,7 @@ Mat shun::RIFT::BuildMIM(vector<Mat>& CS)
 					maxVal = val;
 				}
 			}
-			ptrMIM[c] = iMax;
+			ptrMIM[c] = iMax + 1;
 		}
 	}
 

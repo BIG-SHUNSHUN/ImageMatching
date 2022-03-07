@@ -56,3 +56,5 @@ void FFTShift(Mat& inAndOut);
 void IFFTShift(Mat& inAndOut);
 
 void MeshGrid(Mat x, Mat y, Mat& matX, Mat& matY);
+
+void CountTime(void(*func)());

@@ -253,3 +253,11 @@ void MeshGrid(Mat x, Mat y, Mat & matX, Mat & matY)
 	cv::repeat(x, ny, 1, matX);
 	cv::repeat(y.t(), 1, nx, matY);
 }
+
+void CountTime(void(*func)())
+{
+	int start = getTickCount();
+	func();
+	int end = getTickCount();
+	cout << (end - start) / getTickFrequency() << endl;
+}
