@@ -15,6 +15,7 @@ using namespace std;
 
 #include "phase.h"
 #include "features.h"
+#include "gamma.h"
 
 void PhaseCongruencyDemo()
 {
@@ -58,9 +59,31 @@ void RIFTDemo()
 	rift.DetectAndCompute(optical, keyPtsOptical, desOptical);
 }
 
+void GAMMADemo()
+{
+	/*string strParams = "D:\\working_zone\\data\\GAMMA_SAR\\MLI\\20201130.mli.par";
+	string strBinary = "D:\\working_zone\\data\\GAMMA_SAR\\MLI\\20201130.mli";*/
+
+	string strParams = "E:\\data\\SAR\\ASC\\rmli.par";
+	string strBinary = "E:\\data\\SAR\\ASC\\ave.rmli";
+	
+	shun::GammaImage image;
+	image.Read(strParams, strBinary);
+	image.Show();
+
+
+	
+	//string pointStr = "D:\\data\\SAR\\ASC\\point";
+	//vector<Point> ps_points = ReadPersistentScatterPoint(pointStr);
+
+	//DrawPersistentPoints(image, ps_points);
+
+	//imwrite("D:/sar.jpg", image);
+}
+
 int main(int argc, char** argv)
 {
-	RIFTDemo();
+	GAMMADemo();
 
 
 	string fileL = "../image/pair4.tif";
@@ -123,28 +146,6 @@ int main(int argc, char** argv)
 	//imshow("imgR", imgR);
 	//waitKey(0);
 	//destroyAllWindows();
-
-	return 0;
-}
-
-
-int gamma()
-{
-	//// 
-	string str = "E:\\data\\SAR\\ASC\\utm.par";
-	GammaImagePara par = ReadGammaImageUTMPara(str);
-	Mat image = ReadGammaImage("E:\\data\\SAR\\ASC\\utm.rmli", par);
-
-	DisplayImage(image);
-
-	convertScaleAbs(image, image, 255);
-
-	string pointStr = "D:\\data\\SAR\\ASC\\point";
-	vector<Point> ps_points = ReadPersistentScatterPoint(pointStr);
-
-	DrawPersistentPoints(image, ps_points);
-
-	imwrite("D:/sar.jpg", image);
 
 	return 0;
 }
