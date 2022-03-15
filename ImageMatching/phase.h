@@ -15,6 +15,20 @@ public:
     void Calc(cv::Mat src);
     void Feature(cv::Mat& outEdges, cv::Mat& outCorners);
 
+	std::vector<std::vector<cv::Mat> > _eo;   //s*o
+	std::vector<cv::Mat> _pc;
+	cv::Mat _pcSum;
+	cv::Mat _M;
+	cv::Mat _m;
+
+	int GetnOrient() { return _nOrient;	};
+	int GetnScale() { return _nScale; };
+
+private:
+    std::vector<cv::Mat> _filter;
+	cv::Size _size;    
+
+	// ²ÎÊý
 	int _nOrient = 6;
 	int _nScale = 4;
 	double _minWavelength = 3.0;
@@ -25,16 +39,6 @@ public:
 	double _g = 10.0;
 	int _noiseMethod = -1;
 	double _epsilon = 0.0001;
-
-	std::vector<std::vector<cv::Mat> > _eo;   //s*o
-	std::vector<cv::Mat> _pc;
-	cv::Mat _pcSum;
-	cv::Mat _M;
-	cv::Mat _m;
-
-private:
-    std::vector<cv::Mat> _filter;
-	cv::Size _size;    
 
 	void Initialize(cv::Size size);
 };

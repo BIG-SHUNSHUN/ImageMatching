@@ -1,8 +1,7 @@
 #pragma once
 
 #include <opencv2/opencv.hpp>
-
-using namespace cv;
+#include <vector>
 
 namespace shun
 {
@@ -18,7 +17,7 @@ namespace shun
 		HarrisDetector(int blockSize = 7, int kernelSize = 3, double k = 0.04)
 			: _blockSize(blockSize), _kernelSize(kernelSize), _k(k), _threshRatio(0.5) {}
 		
-		void DetectAndCompute(const Mat& img, std::vector<Point>& result);
+		void DetectAndCompute(const cv::Mat& img, std::vector<cv::Point>& result);
 
 	private:
 		int _blockSize;
@@ -45,7 +44,7 @@ namespace shun
 			: _maxCorners(maxCorners), _qualityLevel(qualityLevel), _minDistance(minDistance),
 			  _blockSize(blockSize), _useHarris(useHarris), _k(k) {}
 
-		void DetectAndCompute(const Mat& img, std::vector<Point>& pts);
+		void DetectAndCompute(const cv::Mat& img, std::vector<cv::Point>& pts);
 
 	private:
 		int _maxCorners;
@@ -57,5 +56,42 @@ namespace shun
 
 	};
 
-	void DrawFeaturePoints(Mat img, const std::vector<Point>& pts);
+	void DrawFeaturePoints(cv::Mat img, const std::vector<cv::Point>& pts);
+
+	class NonlinearSpace
+	{
+		enum DIFFUSION_FUNCTION
+		{
+			G1,
+			G2,
+			G3
+		};
+	public:
+		NonlinearSpace(int nLayer = 3, double scaleValue = 1.6, DIFFUSION_FUNCTION _whichDiff = G2, 
+			           double sigma1 = 1.6, double sigma2 = 1, double ratio = pow(2, 1.0 / 3), double perc = 0.7);
+		void Generate(cv::Mat imgIn);
+		cv::Mat GetLayer(int i);
+
+	private:
+		// ²ÎÊý
+		int _nLayer;
+		double _scaleValue;
+		DIFFUSION_FUNCTION _whichDiff;
+		double _sigma1;
+		double _sigma2;
+		double _ratio;
+		double _perc;
+
+		std::vector<cv::Mat> _space;
+
+		cv::Mat PM_G1(cv::Mat lx, cv::Mat ly, double k);
+		cv::Mat PM_G2(cv::Mat lx, cv::Mat ly, double k);
+		cv::Mat PM_G3(cv::Mat lx, cv::Mat ly, double k);
+		double K_PercentileValue(cv::Mat lx, cv::Mat ly, double perc);
+
+		cv::Mat AOS(cv::Mat last, double step, cv::Mat diff);
+		cv::Mat AOS_row(cv::Mat last, double step, cv::Mat diff);
+		cv::Mat AOS_col(cv::Mat last, double step, cv::Mat diff);
+		cv::Mat Thomas_Algorithm(cv::Mat a, cv::Mat b, cv::Mat c, cv::Mat d);
+	};
 }

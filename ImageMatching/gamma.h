@@ -9,7 +9,8 @@ namespace shun
 	{
 		INT,
 		FLOAT,
-		DOUBLE
+		DOUBLE,
+		NONE
 	};
 
 	struct GammaImagePara
@@ -27,6 +28,7 @@ namespace shun
 
 		void Read(const std::string& dirParams, const std::string& dirData);
 		void Show();
+		cv::Mat GetMat();
 
 	private:
 		GammaImagePara _params;

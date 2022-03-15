@@ -14,6 +14,8 @@ shun::GAMMA_FORMAT shun::GammaImage::Format(string str)
 		return GAMMA_FORMAT::FLOAT;
 	else if (str == "DOUBLE")
 		return GAMMA_FORMAT::DOUBLE;
+	else
+		return GAMMA_FORMAT::NONE;
 }
 
 
@@ -104,6 +106,11 @@ void shun::GammaImage::Show()
 	destroyWindow("GAMMA Image");
 }
 
+Mat shun::GammaImage::GetMat()
+{
+	return _imgToShow;
+}
+
 void shun::GammaImage::ReadParams(const string & fileName)
 {
 	ifstream fin(fileName, ios::in);
@@ -157,20 +164,15 @@ void shun::GammaImage::ReadBinary(const string & fileName)
 vector<Point> shun::ReadPersistentScatterPoint(const string & str)
 {
 	ifstream fin(str, ios::binary | ios::in);
-	//char buffer[4];
 	char buffer[8];
 	vector<Point> points;
 	while (fin.read(buffer, 8))
 	{
-		//short x = *(short*)buffer;
-		//short y = *(short*)(buffer + 2);
-		int x = *(int*)buffer;
-		int y = *(int*)(buffer + 4);
+		float x = *(float*)buffer;
+		float y = *(float*)(buffer + 4);
 
 		x = reversebytes_uint32t(*(uint32_t*)&x);
 		y = reversebytes_uint32t(*(uint32_t*)&y);
-		//x = reversebytes_uint16(*(uint16_t*)&x);
-		//y = reversebytes_uint16(*(uint16_t*)&y);
 
 		Point p(x / 1000, y / 1000);
 		points.push_back(p);

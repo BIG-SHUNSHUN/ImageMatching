@@ -64,27 +64,52 @@ void GAMMADemo()
 	/*string strParams = "D:\\working_zone\\data\\GAMMA_SAR\\MLI\\20201130.mli.par";
 	string strBinary = "D:\\working_zone\\data\\GAMMA_SAR\\MLI\\20201130.mli";*/
 
-	string strParams = "E:\\data\\SAR\\ASC\\rmli.par";
-	string strBinary = "E:\\data\\SAR\\ASC\\ave.rmli";
+	string strParams = "E:\\data\\SAR\\DESC\\rmli.par";
+	string strBinary = "E:\\data\\SAR\\DESC\\ave.rmli";
+
+	//string strParams = "E:\\data\\song-data\\S1a\\20201120.mli.par";
+	//string strBinary = "E:\\data\\song-data\\S1a\\20201120.mli";
 	
 	shun::GammaImage image;
 	image.Read(strParams, strBinary);
 	image.Show();
 
-
 	
-	//string pointStr = "D:\\data\\SAR\\ASC\\point";
-	//vector<Point> ps_points = ReadPersistentScatterPoint(pointStr);
+	
+	//string pointStr = "E:\\data\\SAR\\ASC\\point";
+	//vector<Point> ps_points = shun::ReadPersistentScatterPoint(pointStr);
 
-	//DrawPersistentPoints(image, ps_points);
+	//shun::DrawPersistentPoints(image.GetMat(), ps_points);
 
 	//imwrite("D:/sar.jpg", image);
 }
 
+void NonlinearDiffsionDemo()
+{
+	string path = "C:\\Users\\shunshun\\Desktop\\programming\\need_to_study\\HAPCG-Multimodal-matching-main\\Images\\1-1光照差异.png";
+	Mat img = imread(path, IMREAD_GRAYSCALE);
+
+	shun::NonlinearSpace space(3, 2.0);
+	space.Generate(img);
+
+	for (int i = 0; i < 3; i++)
+	{
+		Mat layer = space.GetLayer(i);
+		imshow("Layer", layer);
+		waitKey(0);
+	}
+	destroyAllWindows();
+
+	PhaseCongruency pc;
+	pc.Calc(space.GetLayer(0));
+	imshow("pc", pc._pcSum);
+	waitKey(0);
+	destroyAllWindows();
+}
+
 int main(int argc, char** argv)
 {
-	GAMMADemo();
-
+	NonlinearDiffsionDemo();
 
 	string fileL = "../image/pair4.tif";
 	string fileR = "../image/52_073_rgbx.tif";

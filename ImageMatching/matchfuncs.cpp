@@ -112,8 +112,8 @@ void shun::RIFT::DetectAndCompute(Mat imgIn, vector<KeyPoint>& keyPoints, Mat& d
 {
 	DetectFeature(imgIn, keyPoints);
 
-	int nOrient = _pc._nOrient;
-	int nScale = _pc._nScale;
+	int nOrient = _pc.GetnOrient();
+	int nScale = _pc.GetnScale();
 	EO eo = _pc._eo;
 	vector<Mat> CS(nOrient);
 	for (int o = 0; o < nOrient; o++)
