@@ -2,6 +2,7 @@
 
 #include <opencv2/opencv.hpp>
 #include <vector>
+#include "phase.h"
 
 namespace shun
 {
@@ -17,7 +18,7 @@ namespace shun
 		HarrisDetector(int blockSize = 7, int kernelSize = 3, double k = 0.04)
 			: _blockSize(blockSize), _kernelSize(kernelSize), _k(k), _threshRatio(0.5) {}
 		
-		void DetectAndCompute(const cv::Mat& img, std::vector<cv::Point>& result);
+		int DetectAndCompute(const cv::Mat& img, std::vector<cv::Point2f>& result, int radius);
 
 	private:
 		int _blockSize;
@@ -44,7 +45,7 @@ namespace shun
 			: _maxCorners(maxCorners), _qualityLevel(qualityLevel), _minDistance(minDistance),
 			  _blockSize(blockSize), _useHarris(useHarris), _k(k) {}
 
-		void DetectAndCompute(const cv::Mat& img, std::vector<cv::Point>& pts);
+		void DetectAndCompute(const cv::Mat& img, std::vector<cv::Point2f>& pts);
 
 	private:
 		int _maxCorners;
@@ -56,7 +57,7 @@ namespace shun
 
 	};
 
-	void DrawFeaturePoints(cv::Mat img, const std::vector<cv::Point>& pts);
+	void DrawFeaturePoints(cv::Mat img, const std::vector<cv::Point2f>& pts);
 
 	class NonlinearSpace
 	{
@@ -71,6 +72,7 @@ namespace shun
 			           double sigma1 = 1.6, double sigma2 = 1, double ratio = pow(2, 1.0 / 3), double perc = 0.7);
 		void Generate(cv::Mat imgIn);
 		cv::Mat GetLayer(int i);
+		int size() { return _space.size(); }
 
 	private:
 		// ²ÎÊý
@@ -93,5 +95,49 @@ namespace shun
 		cv::Mat AOS_row(cv::Mat last, double step, cv::Mat diff);
 		cv::Mat AOS_col(cv::Mat last, double step, cv::Mat diff);
 		cv::Mat Thomas_Algorithm(cv::Mat a, cv::Mat b, cv::Mat c, cv::Mat d);
+	};
+
+	//class HAPCG
+	//{
+	//public:
+	//	HAPCG();
+	//	~HAPCG();
+	//	void DetectAndCompute(cv::Mat imgIn, std::vector<cv::Point2f>& keypoints, cv::Mat& descriptors, 
+	//		                  std::vector<int>& layerBelongTo);
+
+	//private:
+	//	NonlinearSpace _space;
+	//	std::vector<cv::Mat> _W;
+	//	std::vector<cv::Mat> _pc;
+	//	std::vector<cv::Mat> _angle;
+
+	//	double _deltaPhi;
+	//	std::vector<int> _blockRadius;    // z = sqrt(17) * x, y = 3 * x
+
+	//	void InformationFromPhaseCongruency();
+	//	void DetectHarrisCorner(std::vector<cv::Point2f>& keypoints, std::vector<int>& layerBelongTo);
+
+	//	Mat Histgram(Mat grad, Mat angle, Mat polarRadius = Mat(), Mat polarAngle = Mat(), 
+	//		         int rLow = 0, int rHigh = 0, float angleLow = 0.0, float angleHigh = 0.0);
+	//};
+
+	class RIFT
+	{
+	public:
+		RIFT(int nScale = 4, int nOrient = 6);
+		RIFT(const PhaseCongruency& pc);
+		RIFT(const RIFT& other) = delete;
+		RIFT& operator=(const RIFT& other) = delete;
+
+		void DetectAndCompute(cv::Mat imgIn, std::vector<cv::KeyPoint>& keyPoints, cv::Mat& descriptors);
+
+	private:
+		PhaseCongruency _pc;
+		int _patchSize = 96;
+		int _ns = 6;
+		int _ptsNum = 5000;
+
+		void DetectFeature(cv::Mat imgIn, std::vector<cv::KeyPoint>& keyPoints);
+		cv::Mat BuildMIM(std::vector<cv::Mat>& CS);
 	};
 }

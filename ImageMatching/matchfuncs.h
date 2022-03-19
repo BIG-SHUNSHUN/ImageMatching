@@ -26,33 +26,11 @@ namespace shun
 
 	Mat MatchingUsingSIFT(Mat left, Mat right);
 
-	class RIFT
-	{
-	public:
-		RIFT(int nScale = 4, int nOrient = 6);
-		RIFT(const PhaseCongruency& pc);
-		RIFT(const RIFT& other) = delete;
-		RIFT& operator=(const RIFT& other) = delete;
-
-		void DetectAndCompute(Mat imgIn, std::vector<KeyPoint>& keyPoints, Mat& descriptors);
-
-	private:
-		PhaseCongruency _pc;
-		int _patchSize = 96;
-		int _ns = 6;
-		int _ptsNum = 1000;
-
-		void DetectFeature(Mat imgIn, std::vector<KeyPoint>& keyPoints);
-		Mat BuildMIM(std::vector<Mat>& CS);
-	};
-
-	class Matcher
-	{
-	public:
 
 
-	private:
-
-	};
-
+	Mat FastSampleConsensus(std::vector<Point2f> small1, 
+		                    std::vector<Point2f> small2,
+		                    std::vector<Point2f> large1,
+		                    std::vector<Point2f> large2,
+		                    int iters);
 }

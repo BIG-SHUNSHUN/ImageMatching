@@ -62,7 +62,7 @@ Mat LowPassFilter(Size size, double cutOff, int n)
 // src & dst arrays of equal size & type
 PhaseCongruency::PhaseCongruency(int _nScale, int _nOrient)
 	: _nScale(_nScale), _nOrient(_nOrient),
-	_eo(_nScale, vector<Mat>(_nOrient)), //s*o
+	_eo(_nScale, vector<EO>(_nOrient)), //s*o
 	_filter(_nScale * _nOrient),
 	_pc(_nOrient)
 {
@@ -80,24 +80,32 @@ void PhaseCongruency::Calc(Mat src)
 	dft(imageFFT, imageFFT);            // this way the result may fit in the source matrix
 
 	Mat pcSum = Mat::zeros(src.size(), ELEM_TYPE);
-	Mat complex[2];
 	Mat An;
 	Mat sorted;
 	Mat maxAn = Mat::zeros(src.size(), ELEM_TYPE);
+	Mat sumE = Mat::zeros(src.size(), ELEM_TYPE);
+	Mat sumO = Mat::zeros(src.size(), ELEM_TYPE);
+	Mat sumAn = Mat::zeros(src.size(), ELEM_TYPE);
+	Mat energy = Mat::zeros(src.size(), ELEM_TYPE);
+	Mat eo;
+	Mat xEnergy, meanE, meanO;
     for (int o = 0; o < _nOrient; o++)
     {
-		Mat sumE = Mat::zeros(src.size(), ELEM_TYPE);
-		Mat sumO = Mat::zeros(src.size(), ELEM_TYPE);
-		Mat sumAn = Mat::zeros(src.size(), ELEM_TYPE);
-		Mat energy = Mat::zeros(src.size(), ELEM_TYPE);
+		sumE.setTo(0);
+		sumO.setTo(0);
+		sumAn.setTo(0);
+		energy.setTo(0);
 		double tau = 0;
 		
         for (int s = 0; s < _nScale; s++)
         {
-            mulSpectrums(imageFFT, _filter[o * _nScale + s], _eo[s][o], 0); // Convolution
-			idft(_eo[s][o], _eo[s][o], DFT_SCALE);
+            mulSpectrums(imageFFT, _filter[o * _nScale + s], eo, 0); // Convolution
+			idft(eo, eo, DFT_SCALE);
 
-			split(_eo[s][o], complex);
+			Mat complex[2];
+			split(eo, complex);
+			_eo[s][o].e = complex[0];
+			_eo[s][o].o = complex[1];
             magnitude(complex[0], complex[1], An);
 
 			sumAn += An;
@@ -133,7 +141,6 @@ void PhaseCongruency::Calc(Mat src)
 			}
         } // next scale
 
- 		Mat xEnergy, meanE, meanO;
 		magnitude(sumE, sumO, xEnergy); 
 		xEnergy += _epsilon;
 		divide(sumE, xEnergy, meanE);
@@ -141,9 +148,10 @@ void PhaseCongruency::Calc(Mat src)
 
 		for (int s = 0; s < _nScale; s++)
 		{
-			split(_eo[s][o], complex);
-			energy += complex[0].mul(meanE) + complex[1].mul(meanO) - 
-				abs(complex[0].mul(meanO) - complex[1].mul(meanE));
+			Mat tempE = _eo[s][o].e;
+			Mat tempO = _eo[s][o].o;
+			energy += tempE.mul(meanE) + tempO.mul(meanO) -
+				abs(tempE.mul(meanO) - tempO.mul(meanE));
 		}
 
         double T = 0;
@@ -178,36 +186,76 @@ void PhaseCongruency::Calc(Mat src)
 
 void PhaseCongruency::Feature(cv::Mat& outEdges, cv::Mat& outCorners)
 {
-	Mat covx2 = Mat::zeros(_size, ELEM_TYPE);
-	Mat covy2 = Mat::zeros(_size, ELEM_TYPE);
-	Mat covxy = Mat::zeros(_size, ELEM_TYPE);
-	for (int o = 0; o < _nOrient; o++)
+	if (_M.empty() && _m.empty())
 	{
-		double angle = o * M_PI / _nOrient;
-		Mat tmpX = _pc[o] * cos(angle);
-		Mat tmpY = _pc[o] * sin(angle);
+		Mat covx2 = Mat::zeros(_size, ELEM_TYPE);
+		Mat covy2 = Mat::zeros(_size, ELEM_TYPE);
+		Mat covxy = Mat::zeros(_size, ELEM_TYPE);
+		for (int o = 0; o < _nOrient; o++)
+		{
+			double angle = o * M_PI / _nOrient;
+			Mat tmpX = _pc[o] * cos(angle);
+			Mat tmpY = _pc[o] * sin(angle);
 
-		covx2 += tmpX.mul(tmpX);
-		covy2 += tmpY.mul(tmpY);
-		covxy += tmpX.mul(tmpY);
+			covx2 += tmpX.mul(tmpX);
+			covy2 += tmpY.mul(tmpY);
+			covxy += tmpX.mul(tmpY);
+		}
+
+		covx2 = covx2 / _nOrient * 2;
+		covy2 = covy2 / _nOrient * 2;
+		covxy = 4 * covxy / _nOrient;
+
+		Mat denom;
+		magnitude(covxy, covx2 - covy2, denom);
+		denom = denom + _epsilon;
+
+		Mat M = (covy2 + covx2 + denom) / 2;
+		Mat m = (covy2 + covx2 - denom) / 2;
+
+		_M = M;
+		_m = m;
 	}
 
-	covx2 = covx2 / _nOrient * 2;
-	covy2 = covy2 / _nOrient * 2;
-	covxy = 4 * covxy / _nOrient;
+	outEdges = _M;
+	outCorners = _m;
+}
 
-	Mat denom;
-	magnitude(covxy, covx2 - covy2, denom);
-	denom = denom + _epsilon;
+void PhaseCongruency::Orientation(cv::Mat & orient)
+{
+	if (_orient.empty())
+	{
+		Mat EnergyV[2] = { Mat::zeros(_size, ELEM_TYPE) , Mat::zeros(_size, ELEM_TYPE) };
+		Mat sumO = Mat::zeros(_size, ELEM_TYPE);
+		for (int o = 0; o < _nOrient; o++)
+		{
+			double theta = o * M_PI / _nOrient;
+			sumO.setTo(0);
+			for (int s = 0; s < _nScale; s++)
+			{
+				Mat tempO = _eo[s][o].o;
+				sumO += tempO;
+			}
+			EnergyV[0] += sumO * cos(theta);
+			EnergyV[1] += sumO * sin(theta);
+		}
+		
+		int rows = _size.height;
+		int cols = _size.width;
+		_orient.create(_size, ELEM_TYPE);
+		for (int r = 0; r < rows; r++)
+		{
+			double* ptr0 = EnergyV[0].ptr<double>(r);
+			double* ptr1 = EnergyV[1].ptr<double>(r);
+			double* ptrOri = _orient.ptr<double>(r);
+			for (int c = 0; c < cols; c++)
+			{
+				ptrOri[c] = atan2(ptr1[c], ptr0[c]);
+			}
+		}
+	}
 
-	Mat M = (covy2 + covx2 + denom) / 2;
-	Mat m = (covy2 + covx2 - denom) / 2;
-
-	_M = M;
-	_m = m;
-
-	outEdges = M;
-	outCorners = m;
+	orient = _orient;
 }
 
 void PhaseCongruency::Initialize(Size size)

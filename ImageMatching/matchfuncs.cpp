@@ -1,5 +1,6 @@
 #include "matchfuncs.h"
 #include <vector>
+#include <random>
 
 using namespace std;
 
@@ -29,24 +30,29 @@ Mat shun::MatchingUsingSIFT(Mat left, Mat right)
 {
 	imshow("left", left);
 	imshow("right", right);
+
 	// 探测特征点
 	vector<KeyPoint> keyPointLeft, keyPointRight;
 	Ptr<SiftFeatureDetector> f2d = SIFT::create(0, 3, 0.04, 10, 1.6);
 	f2d->detect(left, keyPointLeft);
 	f2d->detect(right, keyPointRight);
+
 	// 计算描述向量
 	Mat descriptorLeft, descriptorRight;
 	f2d->compute(left, keyPointLeft, descriptorLeft);
 	f2d->compute(right, keyPointRight, descriptorRight);
+
 	//匹配特征点
 	FlannBasedMatcher matcher;
 	vector<DMatch> matchResult;
 	matcher.match(descriptorLeft, descriptorRight, matchResult);
+
 	// 画出匹配图像
 	Mat initialMatches;
 	drawMatches(left, keyPointLeft, right, keyPointRight, matchResult, initialMatches);
 	imshow("最初匹配", initialMatches);
 	waitKey(0);
+
 	// 寻找好的匹配点
 	float minDist = matchResult[0].distance, maxDist = matchResult[0].distance;
 	for (int i = 1; i < matchResult.size(); i++)
@@ -60,11 +66,13 @@ Mat shun::MatchingUsingSIFT(Mat left, Mat right)
 		if (matchResult[i].distance <= 2 * minDist)
 			goodMatchResult.push_back(matchResult[i]);
 	}
+
 	// 画出匹配图像（好的匹配点）
 	Mat goodMatches;
 	drawMatches(left, keyPointLeft, right, keyPointRight, goodMatchResult, goodMatches);
 	imshow("好的匹配", goodMatches);
 	waitKey(0);
+
 	// 计算变换矩阵
 	vector<Point2f> pointLeft, pointRight;
 	for (int i = 0; i < goodMatchResult.size(); i++)
@@ -73,6 +81,7 @@ Mat shun::MatchingUsingSIFT(Mat left, Mat right)
 		pointRight.push_back(keyPointRight[goodMatchResult[i].trainIdx].pt);
 	}
 	Mat transformMat = findHomography(pointRight, pointLeft, RANSAC);
+
 	// 影像配准
 	vector<Point2f> rightCornerPoint(4), rightTransformedPoints(4);
 	rightCornerPoint[0].x = 0; rightCornerPoint[0].y = 0;
@@ -80,6 +89,7 @@ Mat shun::MatchingUsingSIFT(Mat left, Mat right)
 	rightCornerPoint[2].x = right.cols; rightCornerPoint[2].y = right.rows;
 	rightCornerPoint[3].x = right.cols; rightCornerPoint[3].y = 0;
 	perspectiveTransform(rightCornerPoint, rightTransformedPoints, transformMat);
+
 	// 拼接
 	Mat dst;
 	warpPerspective(right, dst, transformMat, Size(700, 700));
@@ -93,158 +103,54 @@ Mat shun::MatchingUsingSIFT(Mat left, Mat right)
 	return dst;
 }
 
-bool CompareFunc(const KeyPoint& lhs, const KeyPoint& rhs)
+Mat shun::FastSampleConsensus(std::vector<Point2f> small1, std::vector<Point2f> small2, std::vector<Point2f> large1, std::vector<Point2f> large2, int iters)
 {
-	return lhs.response > rhs.response;
-}
+	default_random_engine e;
+	e.seed(time(NULL));
 
-shun::RIFT::RIFT(int nScale, int nOrient)
-	: _pc(nScale, nOrient)
-{
-}
-
-shun::RIFT::RIFT(const PhaseCongruency & pc)
-	: _pc(pc)
-{
-}
-
-void shun::RIFT::DetectAndCompute(Mat imgIn, vector<KeyPoint>& keyPoints, Mat& descriptors)
-{
-	DetectFeature(imgIn, keyPoints);
-
-	int nOrient = _pc.GetnOrient();
-	int nScale = _pc.GetnScale();
-	EO eo = _pc._eo;
-	vector<Mat> CS(nOrient);
-	for (int o = 0; o < nOrient; o++)
+	vector<Point2f> randPts1(4), randPts2(4);
+	vector<Point2f> transformed;
+	Mat transformedMatrix;
+	int n = small1.size();
+	int maxCount = 0;
+	for (int i = 0; i < iters; i++)
 	{
-		Mat tmp = Mat::zeros(imgIn.size(), CV_64FC1);
-		for (int s = 0; s < nScale; s++)
+		uniform_int_distribution<int> randGenerator(0, n - 1);
+		for (int i = 0; i < 4; i++)
 		{
-			Mat matArr[2];
-			split(eo[s][o], matArr);
-
-			Mat mag;
-			magnitude(matArr[0], matArr[1], mag);
-			tmp = tmp + mag;
+			int index = randGenerator(e);
+			randPts1[i] = small1[index];
+			randPts2[2] = small2[index];
 		}
-		CS[o] = tmp;
-	}
-	Mat MIM = BuildMIM(CS);
 
-	descriptors.create(_ns * _ns * nOrient, keyPoints.size(), CV_64FC1);
-	for (int i = 0; i < keyPoints.size(); i++)
-	{
-		int x = keyPoints[i].pt.x;
-		int y = keyPoints[i].pt.y;
+		Mat m =	findHomography(randPts1, randPts2);
 
-		int x1 = x - _patchSize / 2;
-		int y1 = y - _patchSize / 2;
-		int x2 = x + _patchSize / 2;
-		int y2 = y + _patchSize / 2;
+		perspectiveTransform(large1, transformed, m);
 
-		Mat patch(MIM, Rect(x1, y1, x2 - x1 + 1, y2 - y1 + 1));
-		int ys = patch.rows;
-		int xs = patch.cols;
-		Mat RIFT_des = Mat::zeros(_ns * _ns * nOrient, 1, CV_64FC1);
-		for (int j = 0; j < _ns; j++)
+		int count = 0;
+		for (int i = 0; i < transformed.size(); i++)
 		{
-			for (int k = 0; k < _ns; k++)
+			float x1 = transformed[i].x;
+			float y1 = transformed[i].y;
+			float x2 = large2[i].x;
+			float y2 = large2[i].y;
+			float dx = x2 - x1;
+			float dy = y2 - y1;
+
+			if (sqrt(dx * dx + dy * dy) < 1.0)
 			{
-				double step = (double)ys / _ns;
-				int yc1 = round(j * step);
-				int yc2 = round((j + 1) * step);
-				int xc1 = round(k * step);
-				int xc2 = round((k + 1) * step);
-
-				Mat clip(patch, Rect(xc1, yc1, xc2 - xc1, yc2 - yc1));
-
-				Mat hist;
-				float ranges[] = { 1, _ns + 1 };
-				const float* histRange = { ranges };
-				calcHist(&clip, 1, 0, Mat(), hist, 1, &_ns, &histRange);
-
-				hist.convertTo(hist, CV_64FC1);
-				Mat roi(RIFT_des, Rect(0, nOrient * (j * _ns + k), 1, nOrient));
-				hist.copyTo(roi);
+				count++;
 			}
 		}
 
-		double normVal = norm(RIFT_des, NORM_L2);
-		if (normVal != 0)
-			RIFT_des = RIFT_des / normVal;
-
-		RIFT_des.copyTo(descriptors.col(i));
-	}
-}
-
-bool PtsCompare(const KeyPoint& lhs, const KeyPoint& rhs)
-{
-	return lhs.response > rhs.response;
-}
-
-void shun::RIFT::DetectFeature(Mat imgIn, vector<KeyPoint>& keyPoints)
-{
-	_pc.Calc(imgIn);
-
-	Mat M, m;
-	_pc.Feature(M, m);
-
-	normalize(M, M, 0, 255, NORM_MINMAX);
-	M.convertTo(M, CV_8UC1);
-
-	vector<KeyPoint> pts;
-	Ptr<FastFeatureDetector> detector = FastFeatureDetector::create();
-	detector->detect(M, pts);
-
-	sort(pts.begin(), pts.end(), PtsCompare);
-
-	for (int i = 0; i < pts.size() && i < _ptsNum; i++)
-	{
-		int x = pts[i].pt.x;
-		int y = pts[i].pt.y;
-
-		int x1 = x - _patchSize / 2;
-		int y1 = y - _patchSize / 2;
-		int x2 = x + _patchSize / 2;
-		int y2 = y + _patchSize / 2;
-
-		if (x1 < 0 || y1 < 0 || x2 >= imgIn.cols || y2 >= imgIn.rows)
+		if (count > maxCount)
 		{
-			continue;
-		}
-		else
-		{
-			keyPoints.push_back(pts[i]);
-		}
-	}
-}
-
-Mat shun::RIFT::BuildMIM(vector<Mat>& CS)
-{
-	int rows = CS[0].rows;
-	int cols = CS[0].cols;
-
-	Mat MIM = Mat::zeros(rows, cols, CV_8UC1);
-	for (int r = 0; r < rows; r++)
-	{
-		uchar* ptrMIM = MIM.ptr<uchar>(r);
-		for (int c = 0; c < cols; c++)
-		{
-			int iMax = 0;
-			double maxVal = CS[0].at<double>(r, c);
-			for (int o = 1; o < CS.size(); o++)
-			{
-				double val = CS[o].at<double>(r, c);
-				if (val > maxVal)
-				{
-					iMax = o;
-					maxVal = val;
-				}
-			}
-			ptrMIM[c] = iMax + 1;
+			maxCount = count;
+			transformedMatrix = m;
 		}
 	}
 
-	return MIM;
+	return transformedMatrix;
 }
+
+

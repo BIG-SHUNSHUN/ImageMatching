@@ -22,8 +22,6 @@ inline uint16_t reversebytes_uint16(uint16_t value)
 	return (value & 0x00FFU) << 8 | (value & 0xFF00U) >> 8;
 }
 
-
-
 void CircShift(Mat& inAndOut, Size step);
 
 void FFTShift(Mat& inAndOut);
