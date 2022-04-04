@@ -1,22 +1,39 @@
 #include "wavelet.h"
 
-shun::WaveletPyramid::WaveletPyramid(Mat src, int layers, string name)
-	:_bottom(src), _layers(layers)
+shun::WaveletPyramid::WaveletPyramid(int layers, string name)
+	: _layers(layers), _name(name)
 {
+}
+
+shun::WaveletPyramid::WaveletPyramid(Mat src, int layers, string name)
+	: _layers(layers), _name(name)
+{
+	src.copyTo(_bottom);
 	InitializeByWavelib(src, name);
 }
 
 shun::WaveletPyramid::~WaveletPyramid()
 {
-	for (int i = 0; i < _wtObjects.size(); i++)
-	{
-		wave_free(_wvObjects[i]);
-		wt2_free(_wtObjects[i]);
-		free(_wtCoeffs[i]);
-	}
+	Release();
 }
 
-void shun::WaveletPyramid::ShowImage(int layerIdx, const char * type)
+void shun::WaveletPyramid::Build(Mat src, int layers, string name)
+{
+	Release();
+	src.copyTo(_bottom);
+	_layers = layers;
+	_name = name;
+	InitializeByWavelib(src, name);
+}
+
+void shun::WaveletPyramid::Build(Mat src)
+{
+	Release();
+	src.copyTo(_bottom);
+	InitializeByWavelib(src, _name);
+}
+
+void shun::WaveletPyramid::Show(int layerIdx, const char * type)
 {
 	if (layerIdx < 0 || layerIdx > _layers - 1)
 	{
@@ -31,8 +48,9 @@ void shun::WaveletPyramid::ShowImage(int layerIdx, const char * type)
 	else
 	{
 		Mat img = GetCoeffs(layerIdx, type);
-		normalize(img, img, 1, 0, NORM_MINMAX);
-		imshow("layer " + layerIdx, img);
+		Mat display;
+		normalize(img, display, 0, 1, NORM_MINMAX);    // 因为原始数据是double类型的，所以拉伸到0~1
+		imshow("layer " + layerIdx, display);
 	}
 
 	waitKey(0);
@@ -41,15 +59,22 @@ void shun::WaveletPyramid::ShowImage(int layerIdx, const char * type)
 
 Mat shun::WaveletPyramid::GetCoeffs(int layerIdx, const char * type)
 {
-	if (layerIdx < 1 || layerIdx > _layers - 1)
+	if (layerIdx < 0 || layerIdx > _layers - 1)
 	{
 		cerr << "layerIdx is out of bound" << endl;
 		return Mat();
 	}
-	int rows = 0, cols = 0;
-	double* coeff = getWT2Coeffs(_wtObjects[layerIdx - 1], _wtCoeffs[layerIdx - 1], 1, const_cast<char*>(type), &rows, &cols);
-	Mat img(rows, cols, CV_64F, coeff);
-	return img;
+	else if (layerIdx == 0)
+	{
+		return _bottom;
+	}
+	else
+	{
+		int rows = 0, cols = 0;
+		double* coeff = getWT2Coeffs(_wtObjects[layerIdx - 1], _wtCoeffs[layerIdx - 1], 1, const_cast<char*>(type), &rows, &cols);
+		Mat img(rows, cols, CV_64F, coeff);    // step参数默认是AUTO_STEP，表示每行数据没经过填充，数据是连续的
+		return img;
+	}
 }
 
 void shun::WaveletPyramid::InitializeByWavelib(Mat src, string name)
@@ -61,7 +86,7 @@ void shun::WaveletPyramid::InitializeByWavelib(Mat src, string name)
 	// 将原始影像变为一维double数组
 	Mat dst;
 	src.convertTo(dst, CV_64FC1);
-	vector<double> vecSrc = static_cast<vector<double>>(dst.reshape(1, 1));
+	vector<double> vecSrc = static_cast<vector<double>>(dst.reshape(1, 1));    // 通过复制转为vector
 	double* in = vecSrc.data();
 
 	for (int i = 0; i < _layers - 1; i++)
@@ -73,13 +98,27 @@ void shun::WaveletPyramid::InitializeByWavelib(Mat src, string name)
 		_wtObjects.push_back(wt);
 
 		// 变换结果
-		double* waveCoeffs = dwt2(wt, in);
+		double* waveCoeffs = dwt2(wt, in);    // waveCoeffs指向一段新内存，存放计算结果
 		_wtCoeffs.push_back(waveCoeffs);
 
+		// 下一层的图像大小
 		rows = wt->dimensions[0];
 		cols = wt->dimensions[1];
 		in = waveCoeffs;
 	}
+}
+
+void shun::WaveletPyramid::Release()
+{
+	for (int i = 0; i < _wtObjects.size(); i++)
+	{
+		wave_free(_wvObjects[i]);
+		wt2_free(_wtObjects[i]);
+		free(_wtCoeffs[i]);
+	}
+	_wvObjects.clear();
+	_wtObjects.clear();
+	_wtCoeffs.clear();
 }
 
 double absmax(double *array, int N) {

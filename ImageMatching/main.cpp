@@ -12,6 +12,7 @@
 
 using namespace cv;
 using namespace std;
+using namespace shun;
 
 #include "phase.h"
 #include "features.h"
@@ -29,7 +30,8 @@ void PhaseCongruencyDemo()
 
 	int start = getTickCount();
 	PhaseCongruency pc;
-	pc.Calc(image);
+	pc.SetParams(4, 6);
+	pc.Prepare(image);
 
 	Mat edge, corner;
 	pc.Feature(edge, corner);
@@ -44,22 +46,6 @@ void PhaseCongruencyDemo()
 	imshow("corners", corner);
 	waitKey(0);
 	destroyAllWindows();
-}
-
-void RIFTDemo()
-{
-	string sarFile = "../image/pair3.tif";
-	string opticalFile = "../image/pair4.tif";
-
-	Mat sar = imread(sarFile, IMREAD_GRAYSCALE);
-	Mat optical = imread(opticalFile, IMREAD_GRAYSCALE);
-
-	shun::RIFT rift;
-	vector<KeyPoint> keyPtsSar, keyPtsOptical;
-	Mat desSar, desOptical;
-
-	rift.DetectAndCompute(sar, keyPtsSar, desSar);
-	rift.DetectAndCompute(optical, keyPtsOptical, desOptical);
 }
 
 void GAMMADemo()
@@ -104,7 +90,8 @@ void NonlinearDiffsionDemo()
 	destroyAllWindows();
 
 	PhaseCongruency pc;
-	pc.Calc(space.GetLayer(0));
+	pc.SetParams(4, 6);
+	pc.Prepare(space.GetLayer(0));
 	imshow("pc", pc.pcSum());
 	waitKey(0);
 	destroyAllWindows();
@@ -112,152 +99,103 @@ void NonlinearDiffsionDemo()
 
 void RIFTMatchDemo()
 {
-	// step 1：光学影像和SAR影像
+	// 光学影像和SAR影像
 	string opticalFile = "../image/pair4.tif";
 	string sarFile = "../image/pair3.tif";
-	// 先转为彩色图，便于画特征点
-	Mat opticalColor = imread(opticalFile, IMREAD_COLOR);
-	Mat sarColor = imread(sarFile, IMREAD_COLOR);
-	// 彩色图像转为灰度图，用于特征提取及描述符构建
-	Mat optical, sar;
-	cvtColor(opticalColor, optical, COLOR_BGR2GRAY);
-	cvtColor(sarColor, sar, COLOR_BGR2GRAY);
 
-	cout << "read images..." << endl << endl;
-
-	// step 2：使用RIFT提取特征点和描述符
-	shun::RIFT rift;
-	vector<KeyPoint> keyPtsOptical, keyPtsSar;
-	Mat desOptical, desSar;
-	rift.DetectAndCompute(optical, keyPtsOptical, desOptical);
-	rift.DetectAndCompute(sar, keyPtsSar, desSar);
-	
-	cout << "RIFT keypoints detected optical: " << keyPtsOptical.size() << endl;
-	cout << "RIFT keypoints detected SAR: " << keyPtsSar.size() << endl << endl;
-
-	// step 3：初始匹配，找出最近邻和次近邻
-	FlannBasedMatcher matcher;
-	vector<vector<DMatch>> initialMatches;
-	matcher.knnMatch(desOptical.t(), desSar.t(), initialMatches, 2);
-
-	cout << "initial match: " << initialMatches.size() << " pairs" << endl << endl;
-
-	float maxVal = FLT_MIN, minVal = FLT_MAX;
-	for (int i = 0; i < initialMatches.size(); i++)
-	{
-		const vector<DMatch>& m = initialMatches[i];
-		float ratio = m[0].distance / m[1].distance;
-		if (ratio > maxVal)
-			maxVal = ratio;
-		if (ratio < minVal)
-			minVal = ratio;
-	}
-
-	cout << "distance ratio range: [" << minVal << ", " << maxVal << "]" << endl << endl;
-
-	vector<Point2f> ptsOptical, ptsSar;
-	for (int i = 0; i < initialMatches.size(); i++)
-	{
-		const vector<DMatch>& m = initialMatches[i];
-		if (m[0].distance < m[1].distance * 1)
-		{
-			const Point2f pt1 = keyPtsOptical[m[0].queryIdx].pt;
-			const Point2f pt2 = keyPtsSar[m[0].trainIdx].pt;
-			ptsOptical.push_back(pt1);
-			ptsSar.push_back(pt2);
-		}
-	}
-
-	// step 4：用RANSAC方法计算变换矩阵
-	Mat m = findHomography(ptsOptical, ptsSar, RHO);
-
-	cout << "compte Homography matrix using PSOSAC" << endl << endl;
-
-	//// 接口设计还需完善
-	//Mat transformMatrix = shun::FastSampleConsensus(smallOptical, smallSar, largeOptical, largeSar, 1000);
-	
-	// step 5：剔除粗差点，点位误差小于2像素
-	vector<Point2f> transformed;
-	perspectiveTransform(ptsOptical, transformed, m);
-
-	vector<Point2f> goodMatchesOptical, goodMatchesSar;
-	for (int i = 0; i < transformed.size(); i++)
-	{
-		float x1 = transformed[i].x;
-		float y1 = transformed[i].y;
-		float x2 = ptsSar[i].x;
-		float y2 = ptsSar[i].y;
-		float dx = x2 - x1;
-		float dy = y2 - y1;
-
-		if (sqrt(dx * dx + dy * dy) < 2.0)
-		{
-			goodMatchesOptical.push_back(ptsOptical[i]);
-			goodMatchesSar.push_back(ptsSar[i]);
-		}
-	}
-
-	cout << "good matches after outlier removal (position error less than 2 pixels): " << goodMatchesOptical.size() << endl << endl;
-
-	// step 6：画出匹配结果
-	for (int i = 0; i < goodMatchesOptical.size(); i++)
-	{
-		circle(opticalColor, goodMatchesOptical[i], 2, Scalar(0, 0, 255), -1);
-		circle(sarColor, goodMatchesSar[i], 2, Scalar(0, 0, 255), -1);
-	}
-
-	imshow("optical", opticalColor);
-	imshow("sar", sarColor);
-
-	// step 7: 计算匹配误差
-	m = findHomography(goodMatchesOptical, goodMatchesSar, RHO);
-	perspectiveTransform(goodMatchesOptical, transformed, m);
-	double error = 0;
-	for (int i = 0; i < goodMatchesOptical.size(); i++)
-	{
-		float x1 = transformed[i].x;
-		float y1 = transformed[i].y;
-		float x2 = goodMatchesSar[i].x;
-		float y2 = goodMatchesSar[i].y;
-		float dx = x2 - x1;
-		float dy = y2 - y1;
-
-		error += dx * dx + dy * dy;
-	}
-	error = sqrt(error / goodMatchesOptical.size());
-
-	cout << "match error is: " << error << endl;
+	RIFT_Matching(opticalFile, sarFile);
 }
 
 void HAPCG_Demo()
 {
-	// step 1：光学影像和SAR影像
-	string opticalFile = "../image/pair4.tif";
-	string sarFile = "../image/pair3.tif";
-	// 先转为彩色图，便于画特征点
-	Mat opticalColor = imread(opticalFile, IMREAD_COLOR);
-	Mat sarColor = imread(sarFile, IMREAD_COLOR);
-	// 彩色图像转为灰度图，用于特征提取及描述符构建
-	Mat optical, sar;
-	cvtColor(opticalColor, optical, COLOR_BGR2GRAY);
-	cvtColor(sarColor, sar, COLOR_BGR2GRAY);
+	
+}
 
-	cout << "read images..." << endl << endl;
+void OrienCrossDetectDemo()
+{
+	string file = "../image/pair4.tif";
+	Mat img = imread(file, IMREAD_GRAYSCALE);
+	WaveletPyramid pyramid(img, 6, "bior1.1");
 
-	shun::NonlinearSpace spaceOptical, spaceSar;
-	spaceOptical.Generate(optical);
-	spaceSar.Generate(sar);
+	Mat h = pyramid.GetCoeffs(1, "H");
+	Mat v = pyramid.GetCoeffs(1, "V");
 
+	// Canny 边缘提取
+	Mat A;
+	normalize(pyramid.GetCoeffs(1, "A"), A, 0, 255, NORM_MINMAX, CV_8UC1);
+	Mat edge;
+	Canny(A, edge, 80, 120);
+	// sobel梯度
+	Mat dx, dy;
+	Sobel(A, dx, CV_32FC1, 0, 1);
+	Sobel(A, dy, CV_32FC1, 1, 0);
+	Mat grad_sobel;
+	magnitude(dx, dy, grad_sobel);
+	normalize(grad_sobel, grad_sobel, 0, 1, NORM_MINMAX);
 
+	// 小波梯度
+	Mat g_map;
+	magnitude(h, v, g_map);
+	Mat grad_wavelet;
+	normalize(g_map, grad_wavelet, 0, 255, NORM_MINMAX, CV_8UC1);
+	equalizeHist(grad_wavelet, grad_wavelet);
+
+	Mat d_map;
+	Atan2ForMat(h, v, d_map);
+
+	double thresh = ValuePercent(g_map, 0.4);
+
+	Mat mask = g_map > thresh;
+
+	Mat edge1 = OrientCrossDetection(g_map, d_map, mask);
+}
+
+void TemplatMatchingDemo()
+{
+	string fileL = "../image/cityL.tif";
+	string fileR = "../image/cityR.tif";
+
+	Mat imgL = imread(fileL, IMREAD_COLOR);
+	Mat imgR = imread(fileR, IMREAD_COLOR);
+
+	Mat imgL_gray, imgR_gray;
+	cvtColor(imgL, imgL_gray, COLOR_BGR2GRAY);
+	cvtColor(imgR, imgR_gray, COLOR_BGR2GRAY);
+
+	Mat edgeL, edgeR;
+	Canny(imgL_gray, edgeL, 80, 150);
+	Canny(imgR_gray, edgeR, 80, 150);
+
+	ShiTomashiDetector detector(500, true);
+	vector<Point2f> pts;
+	detector.DetectAndCompute(imgL_gray, pts, 51);
+
+	//vector<Point2f> matchPoints;
+	//TemplateMatching m(51, 21);
+	//m.Execute(pts, edgeL, edgeR, matchPoints);
+
+	vector<Point2f> matchPoints;
+	WaveletPyramidMathing m(51, 31);
+	m.Execute(pts, edgeL, edgeR, matchPoints);
+
+	DrawFeaturePoints(imgL, pts);
+	DrawFeaturePoints(imgR, matchPoints);
+
+	imshow("imgL", imgL);
+	imshow("imgR", imgR);
+	waitKey(0);
+
+	destroyAllWindows();
 }
 
 int main(int argc, char** argv)
 {
 	PhaseCongruencyDemo();
-	RIFTMatchDemo();
+	TemplatMatchingDemo();
+	// RIFTMatchDemo();
 
-	string fileL = "../image/pair4.tif";
-	string fileR = "../image/52_073_rgbx.tif";
+	string fileL = "../image/cityL.tif";
+	string fileR = "../image/cityR.tif";
 
 	Mat imgL = imread(fileL, IMREAD_COLOR);
 	Mat imgR = imread(fileR, IMREAD_COLOR);
@@ -297,13 +235,13 @@ int main(int argc, char** argv)
 	//imgR.convertTo(imgR_Double, CV_64FC1);
 
 	//shun::WaveletPyramid pyramid(imgL_gray, 6, "haar");
-	//pyramid.ShowImage(0, nullptr);
-	//pyramid.ShowImage(1, "A");
-	//pyramid.ShowImage(2, "A");
-	//pyramid.ShowImage(3, "A");
-	//pyramid.ShowImage(4, "A");
-	//pyramid.ShowImage(5, "A");
-	// pyramid.ShowImage(3, "D");
+	//pyramid.Show(0, nullptr);
+	//pyramid.Show(1, "A");
+	//pyramid.Show(2, "A");
+	//pyramid.Show(3, "A");
+	//pyramid.Show(4, "A");
+	//pyramid.Show(5, "A");
+	//pyramid.Show(3, "D");
 
 	//// 模板匹配
 	//Point pts(imgL.cols / 2 + 100, imgR.rows / 2);

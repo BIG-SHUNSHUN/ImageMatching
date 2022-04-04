@@ -61,9 +61,101 @@ void shun::DrawFeaturePoints(Mat img, const std::vector<Point2f>& pts)
 	}
 }
 
-void shun::ShiTomashiDetector::DetectAndCompute(const Mat & img, std::vector<Point2f>& pts)
+cv::Mat shun::OrientCrossDetection(cv::Mat g_map, cv::Mat d_map, cv::Mat mask)
 {
-	goodFeaturesToTrack(img, pts, _maxCorners, _qualityLevel, _minDistance, Mat(), _blockSize, _useHarris, _k);
+	assert(g_map.size() == d_map.size());
+	if (mask.empty())
+		mask = Mat::ones(g_map.size(), CV_8UC1);
+
+	Mat edge = Mat::zeros(g_map.size(), CV_8UC1);
+
+	int rows = g_map.rows;
+	int cols = g_map.cols;
+	for (int r = 2; r < rows - 2; r++)
+	{
+		for (int c = 2; c < cols - 2; c++)
+		{
+			// 不是边缘点的候选点
+			if (mask.at<uchar>(r, c) == 0)
+				continue;
+
+			double d = d_map.at<double>(r, c);
+			if (d < 0)
+				d += 2 * M_PI;
+
+			d = d / M_PI * 180;
+
+			// 根据方向图，计算偏移量
+			int dx = 0, dy = 0;
+			if ((d >= 0 && d < 22.5) || (d >= 157.5 && d < 202.5) || (d >= 337.5))
+			{
+				dx = 1;
+			}
+			else if ((d >= 67.5 && d < 112.5) || (d >= 247.5 && d < 292.5))
+			{
+				dy = 1;
+			}
+			else if ((d >= 22.5 && d < 67.5) || (d >= 202.5 && d < 247.5))
+			{
+				dx = 1;
+				dy = 1;
+			}
+			else
+			{
+				dx = 1;
+				dy = -1;
+			}
+
+			// 最小二乘求解抛物线系数
+			Mat B = Mat::zeros(5, 3, CV_64FC1);
+			Mat L = Mat::zeros(5, 1, CV_64FC1);
+			for (int r1 = -2; r1 <= 2; r1++)
+			{
+				B.at<double>(r1 + 2, 0) = 1;
+				B.at<double>(r1 + 2, 1) = r1;
+				B.at<double>(r1 + 2, 2) = r1 * r1;
+				L.at<double>(r1 + 2, 0) = g_map.at<double>(r1 * dy + r, r1 * dx + c);
+			}
+			Mat x = (B.t() * B).inv() * B.t() * L;
+
+			double k0 = x.at<double>(0, 0);
+			double k1 = x.at<double>(1, 0);
+			double k2 = x.at<double>(2, 0);
+			if (k2 < 0 && -k1 / (2 * k2) < 0.5)    // 如果是局部极大值
+				edge.at<uchar>(r, c) = 255;
+		}
+	}
+
+	return edge;
+}
+
+void shun::ShiTomashiDetector::DetectAndCompute(const Mat & img, std::vector<Point2f>& pts, int r)
+{
+	vector<Point2f> temp;
+	if (r != 0)
+	{
+		goodFeaturesToTrack(img, temp, _maxCorners, _qualityLevel, _minDistance, Mat(), _blockSize, _useHarris, _k);
+		int rows = img.rows;
+		int cols = img.cols;
+		for (int i = 0; i < temp.size(); i++)
+		{
+			float x = temp[i].x;
+			float y = temp[i].y;
+
+			float x1 = x - r;
+			float x2 = x + r;
+			float y1 = y - r;
+			float y2 = y + r;
+			if (x1 < 0 || x2 >= cols || y1 < 0 || y2 >= rows)
+				continue;
+
+			pts.push_back(temp[i]);
+		}
+	}
+	else
+	{
+		goodFeaturesToTrack(img, pts, _maxCorners, _qualityLevel, _minDistance, Mat(), _blockSize, _useHarris, _k);
+	}
 }
 
 shun::NonlinearSpace::NonlinearSpace(int nLayer, double scaleValue, DIFFUSION_FUNCTION whichDiff, double sigma1, double sigma2, double ratio, double perc)
@@ -94,17 +186,21 @@ void shun::NonlinearSpace::Generate(Mat imgIn)
 
 	for (int i = 1; i < _nLayer; i++)
 	{
+		// 缩小图像
 		Mat last;
 		resize(_space[i - 1], last, Size(), 1 / _scaleValue, 1 / _scaleValue);
 
+		// 高斯平滑
 		int winSize = 2 * round(2 * _sigma2) + 1;
 		Mat lastBlurred;
 		GaussianBlur(last, lastBlurred, Size(winSize, winSize), _sigma2, _sigma2, BORDER_REPLICATE);
 
+		// 计算x方向和y方向的梯度
 		Mat lx, ly;
 		Sobel(lastBlurred, lx, CV_64FC1, 1, 0, 3, 1, 0, BORDER_REPLICATE);
 		Sobel(lastBlurred, ly, CV_64FC1, 0, 1, 3, 1, 0, BORDER_REPLICATE);
 
+		// 扩散
 		double kPerc = K_PercentileValue(lx, ly, _perc);
 		Mat diff;
 		switch (_whichDiff)
@@ -310,131 +406,226 @@ cv::Mat shun::NonlinearSpace::Thomas_Algorithm(cv::Mat a, cv::Mat b, cv::Mat c, 
 	return x;
 }
 
-//void shun::HAPCG::DetectAndCompute(cv::Mat imgIn, std::vector<cv::Point2f>& keypoints, cv::Mat & descriptors, std::vector<int>& layerBelongTo)
-//{
-//	_space.Generate(imgIn);
-//	InformationFromPhaseCongruency();
-//	DetectHarrisCorner(keypoints, layerBelongTo);
-//
-//	Mat polarRadius = Mat::zeros(2 * _blockRadius.back() + 1, 2 * _blockRadius.back() + 1, CV_32FC1);
-//	Mat	polarAngle = Mat::zeros(2 * _blockRadius.back() + 1, 2 * _blockRadius.back() + 1, CV_32FC1);
-//	for (int r = 0; r < 2 * _blockRadius.back() + 1; r++)
-//	{
-//		float* ptrRadius = polarRadius.ptr<float>(r);
-//		float* ptrAngle = polarAngle.ptr<float>(r);
-//		for (int c = 0; c < 2 * _blockRadius.back() + 1; c++)
-//		{
-//			int dx = c - _blockRadius.back();
-//			int dy = r - _blockRadius.back();
-//
-//			float r = sqrt(dx * dx + dy * dy);
-//			float angle = atan2(dy, dx);
-//
-//			ptrRadius[c] = r;
-//			ptrAngle[c] = angle;
-//		}
-//	}
-//	
-//	descriptors.create(keypoints.size(), 200, CV_32FC1);
-//	for (int i = 0; i < keypoints.size(); i++)
-//	{
-//		float x = keypoints[i].x;
-//		float y = keypoints[i].y;
-//		int layer = layerBelongTo[i];
-//
-//		float x1 = x - _blockRadius.back() / pow(2.0, i);
-//		float x2 = x + _blockRadius.back() / pow(2.0, i);
-//		float y1 = y - _blockRadius.back() / pow(2.0, i);
-//		float y2 = y + _blockRadius.back() / pow(2.0, i);
-//
-//		Mat desBlock = Mat::zeros(1, 200, CV_32FC1);
-//
-//		Mat gradPatch(_pc[layer], Rect(x1, y1, x2 - x1 + 1, y2 - y1 + 1));
-//		Mat anglePacth(_angle[layer], Rect(x1, y1, x2 - x1 + 1, y2 - y1 + 1));
-//		Mat desPatch = Histgram(gradPatch, anglePacth, Mat(), Mat(), 0, _blockRadius.back / pow(2.0, i));
-//
-//		desPatch.copyTo(Mat(desBlock, Rect(0, 0, 8, 1)));
-//
-//		for (int k = 1; k < _blockRadius.size(); k++)
-//		{
-//			int radiusCur = _blockRadius[k];
-//			int radiusLast = _blockRadius[k - 1];
-//			float dAngle = 2 * M_PI / 8;
-//			for (int o = 0; o < 8; o++)
-//			{
-//				vector<int> xList;
-//				vector<int> yList;
-//				int x1 = x + radiusLast * cos(o * dAngle);
-//				int y1 = y + radiusLast * sin(o * dAngle);
-//				xList.push_back(x1);
-//				yList.push_back(y1);
-//				int x2 = x + radiusLast * cos((o + 1) * dAngle);
-//				int y2 = y + radiusLast * sin((o + 1) * dAngle);
-//				xList.push_back(x2);
-//				yList.push_back(y2);
-//				int x3 = x + radiusCur * cos(o * dAngle);
-//				int y3 = y + radiusCur * sin(o * dAngle);
-//				xList.push_back(x3);
-//				yList.push_back(y3);
-//				int x4 = x + radiusCur * cos((o + 1) * dAngle);
-//				int y4 = y + radiusCur * sin((o + 1) * dAngle);
-//				xList.push_back(x4);
-//				yList.push_back(y4);
-//
-//				sort(xList.begin(), xList.end());
-//				sort(yList.begin(), yList.end());
-//				int xMin = xList[0], xMax = xList.back();
-//				int yMin = yList[0], yMax = yList.back();
-//
-//				Rect roi = Rect(xMin, yMin, xMax - xMin + 1, yMax - yMin + 1);
-//				Mat gradPatch(_pc[i], roi);
-//				Mat anglePatch(_angle[i], roi);
-//				Mat polarRadiusPatch(polarRadius, roi);    // TODO
-//				Mat polarAnglePatch(polarAngle, roi);    // TODO
-//
-//				Mat despPatch = Histgram(gradPatch, anglePatch, polarRadiusPatch, polarAnglePatch, radiusCur, radiusLast, o * dAngle, (o + 1) * dAngle);
-//				desPatch.copyTo(Mat(desBlock, Rect((k * 8 + o) * 8 + 8, 0, 8, 1)));
-//			}
-//		}
-//
-//		descriptors.row(i) = desBlock;
-//	}
-//}
-//
-//void shun::HAPCG::InformationFromPhaseCongruency()
-//{
-//	int nLayer = _space.size();
-//	for (int i = 0; i < nLayer; i++)
-//	{
-//		PhaseCongruency pc;
-//		pc.Calc(_space.GetLayer(i));
-//
-//		Mat M, m;
-//		pc.Feature(M, m);
-//
-//		Mat W = (M + m + _deltaPhi * (M - m)) / 2.0;
-//		_W.push_back(W);
-//
-//		_pc.push_back(pc.pcSum());
-//
-//		// TODO phase congruency angle
-//	}
-//}
-//
-//void shun::HAPCG::DetectHarrisCorner(std::vector<cv::Point2f>& keypoints, std::vector<int>& layerBelongTo)
-//{
-//	int n = _space.size();
-//	HarrisDetector harris;
-//	for (int i = 0; i < _space.size(); i++)
-//	{
-//		int count = harris.DetectAndCompute(_W[i], keypoints, _blockRadius[0] / pow(2.0, i));
-//
-//		for (int i = 0; i < count; i++)
-//		{
-//			layerBelongTo.push_back(i);
-//		}
-//	}
-//}
+shun::HAPCG::HAPCG(int layer, double scaleVal)
+	: _W(layer), _grad(layer), _angle(layer), 
+	_space(3, scaleVal), _deltaPhi(3)
+{
+	_blockRadius.push_back(8);
+	_blockRadius.push_back(24);
+	_blockRadius.push_back(33);
+	_blockRadius.push_back(40);
+}
+
+shun::HAPCG::~HAPCG()
+{
+}
+
+void shun::HAPCG::DetectAndCompute(cv::Mat imgIn, std::vector<cv::Point2f>& keypoints, cv::Mat & descriptors, std::vector<int>& layerBelongTo)
+{
+	_space.Generate(imgIn);    // 生成非线性空间
+	InformationFromPhaseCongruency();    // 计算phase congruency，获取相应结果
+	DetectHarrisCorner(keypoints, layerBelongTo);
+
+	Mat img = _space.GetLayer(0);
+	normalize(img, img, 0, 255, NORM_MINMAX, CV_8UC1);
+	Mat color;
+	cvtColor(img, color, COLOR_GRAY2BGR);
+	for (int i = 0; i < keypoints.size(); i++)
+	{
+		int layer = layerBelongTo[i];
+		
+		circle(color, keypoints[i] * pow(2.0, layer), 3, Scalar(0, 0, 255), -1);
+	}
+
+	imshow("color", color);
+	waitKey(0);
+
+	Mat polarRadius = Mat::zeros(2 * _blockRadius.back() + 1, 2 * _blockRadius.back() + 1, CV_32FC1);
+	Mat	polarAngle = Mat::zeros(2 * _blockRadius.back() + 1, 2 * _blockRadius.back() + 1, CV_32FC1);
+	for (int r = 0; r < 2 * _blockRadius.back() + 1; r++)
+	{
+		float* ptrRadius = polarRadius.ptr<float>(r);
+		float* ptrAngle = polarAngle.ptr<float>(r);
+		for (int c = 0; c < 2 * _blockRadius.back() + 1; c++)
+		{
+			int dx = c - _blockRadius.back();
+			int dy = r - _blockRadius.back();
+
+			float r = sqrt(dx * dx + dy * dy);
+			float angle = atan2(dy, dx);
+
+			if (angle < 0)   
+				angle += 2 * M_PI;
+
+			ptrRadius[c] = r;
+			ptrAngle[c] = angle;
+		}
+	}
+	
+	descriptors.create(keypoints.size(), 200, CV_32FC1);    // 200这个有待商榷
+	for (int i = 0; i < keypoints.size(); i++)
+	{
+		Mat desBlock = Mat::zeros(1, 200, CV_32FC1);
+
+		float x = keypoints[i].x;
+		float y = keypoints[i].y;
+		int layer = layerBelongTo[i];
+
+		// 1 最内层单独处理
+		float x1 = x - _blockRadius[0] / pow(2.0, layer);
+		float x2 = x + _blockRadius[0] / pow(2.0, layer);
+		float y1 = y - _blockRadius[0] / pow(2.0, layer);
+		float y2 = y + _blockRadius[0] / pow(2.0, layer);
+
+		Rect roi = Rect(x1, y1, x2 - x1 + 1, y2 - y1 + 1);
+		Mat gradPatch(_grad[layer], roi);
+		Mat anglePacth(_angle[layer], roi);
+		Rect roiP = Rect(x1 - x + _blockRadius.back(), 
+			             y1 - y + _blockRadius.back(),
+			             x2 - x1 + 1,
+			             y2 - y1 + 1);
+		Mat polarRadiusPatch(polarRadius, roiP);
+		Mat desPatch = Histgram(gradPatch, anglePacth, polarRadiusPatch, Mat(), 0, _blockRadius[0] / pow(2.0, layer));
+		desPatch.copyTo(Mat(desBlock, Rect(0, 0, 8, 1)));
+
+		// 2 循环处理每个环
+		for (int k = 1; k < _blockRadius.size(); k++)
+		{
+			int radiusCur = _blockRadius[k] / pow(2.0, layer);
+			int radiusLast = _blockRadius[k - 1] / pow(2.0, layer);
+			float dAngle = 2 * M_PI / 8;    // 这个8有待商榷
+
+			for (int o = 0; o < 8; o++)
+			{
+				vector<int> xList;
+				vector<int> yList;
+				int x1 = radiusLast * cos(o * dAngle);
+				int y1 = radiusLast * sin(o * dAngle);
+				xList.push_back(x1);
+				yList.push_back(y1);
+				int x2 = radiusLast * cos((o + 1) * dAngle);
+				int y2 = radiusLast * sin((o + 1) * dAngle);
+				xList.push_back(x2);
+				yList.push_back(y2);
+				int x3 = radiusCur * cos(o * dAngle);
+				int y3 = radiusCur * sin(o * dAngle);
+				xList.push_back(x3);
+				yList.push_back(y3);
+				int x4 = radiusCur * cos((o + 1) * dAngle);
+				int y4 = radiusCur * sin((o + 1) * dAngle);
+				xList.push_back(x4);
+				yList.push_back(y4);
+
+				sort(xList.begin(), xList.end());
+				sort(yList.begin(), yList.end());
+				int xMin = xList[0], xMax = xList.back();
+				int yMin = yList[0], yMax = yList.back();
+
+				Rect roi = Rect(xMin + x, yMin + y, xMax - xMin + 1, yMax - yMin + 1);
+				Mat gradPatch(_grad[layer], roi);
+				Mat anglePatch(_angle[layer], roi);
+
+				Rect roiP = Rect(xMin + _blockRadius.back(), yMin + _blockRadius.back(), xMax - xMin + 1, yMax - yMin + 1);
+				Mat polarRadiusPatch(polarRadius, roiP);   
+				Mat polarAnglePatch(polarAngle, roiP);    
+
+				Mat desPatch = Histgram(gradPatch, anglePatch, polarRadiusPatch, polarAnglePatch, radiusLast, radiusCur, o * dAngle, (o + 1) * dAngle);
+				desPatch.copyTo(Mat(desBlock, Rect(((k - 1) * 8 + o) * 8 + 8, 0, 8, 1)));
+			}
+		}
+
+		double minVal, maxVal;
+		minMaxLoc(desBlock, &minVal, &maxVal);
+		if (minVal != maxVal)
+			normalize(desBlock, desBlock, 0, 1, NORM_MINMAX);
+
+		desBlock.copyTo(descriptors.row(i));
+	}
+}
+
+void shun::HAPCG::InformationFromPhaseCongruency()
+{
+	int nLayer = _space.size();
+	for (int i = 0; i < nLayer; i++)
+	{
+		PhaseCongruency pc;
+		Mat layerImg = _space.GetLayer(i);
+		pc.SetParams(4, 6);
+		pc.Prepare(_space.GetLayer(i));
+
+		Mat M, m;
+		pc.Feature(M, m);
+
+		Mat W = (M + m + _deltaPhi * (M - m)) / 2.0;
+		_W[i] = W;
+
+		Mat pcsum = pc.pcSum();
+		_grad[i] = pc.pcSum();
+
+		Mat orient;
+		pc.Orientation(orient);
+		_angle[i] = orient;
+	}
+}
+
+void shun::HAPCG::DetectHarrisCorner(std::vector<cv::Point2f>& keypoints, std::vector<int>& layerBelongTo)
+{
+	int n = _space.size();
+	HarrisDetector harris;
+	for (int i = 0; i < _space.size(); i++)
+	{
+		Mat img;
+		_W[i].convertTo(img, CV_32FC1);
+		int count = harris.DetectAndCompute(img, keypoints, _blockRadius.back() / pow(2.0, i));
+
+		for (int j = 0; j < count; j++)
+		{
+			layerBelongTo.push_back(i);
+		}
+	}
+}
+
+Mat shun::HAPCG::Histgram(cv::Mat grad, cv::Mat angle, cv::Mat polarRadius, cv::Mat polarAngle, int rLow, int rHigh, float angleLow, float angleHigh)
+{
+	int rows = grad.rows;
+	int cols = grad.cols;
+	Mat hist = Mat::zeros(1, 8, CV_32FC1);
+	float* ptrHist = hist.ptr<float>(0);
+
+	for (int r = 0; r < rows; r++)
+	{
+		double* ptrG = grad.ptr<double>(r);
+		double* ptrA = angle.ptr<double>(r);
+		
+		float* ptrPR = nullptr, *ptrPA = nullptr;
+		if (!polarRadius.empty())
+			ptrPR = polarRadius.ptr<float>(r);
+		if (!polarAngle.empty())
+			ptrPA = polarAngle.ptr<float>(r);
+
+		for (int c = 0; c < cols; c++)
+		{
+			if (!polarRadius.empty() && (ptrPR[c] > rHigh || ptrPR[c] < rLow))
+				continue;
+			if (!polarAngle.empty() && (ptrPA[c] < angleLow || ptrPA[c] > angleHigh))
+				continue;
+
+			double g = ptrG[c];
+			double a = ptrA[c];
+
+			if (a < 0) a += 2 * M_PI;
+
+			int index1 = floor(a / (2 * M_PI / 8));
+			int index2 = (index1 + 1) % 8;
+
+			double delta = a / (2 * M_PI / 8) - index1;
+
+			ptrHist[index1] += (1 - delta) * g;
+			ptrHist[index2] += delta * g;
+		}
+	}
+	return hist;
+}
 
 bool CompareFunc(const KeyPoint& lhs, const KeyPoint& rhs)
 {
@@ -442,8 +633,8 @@ bool CompareFunc(const KeyPoint& lhs, const KeyPoint& rhs)
 }
 
 shun::RIFT::RIFT(int nScale, int nOrient)
-	: _pc(nScale, nOrient)
 {
+	_pc.SetParams(nScale, nOrient);
 }
 
 shun::RIFT::RIFT(const PhaseCongruency & pc)
@@ -457,8 +648,8 @@ void shun::RIFT::DetectAndCompute(Mat imgIn, vector<KeyPoint>& keyPoints, Mat& d
 	DetectFeature(imgIn, keyPoints);
 
 	// 构建MIM
-	int nOrient = _pc.orientSize();
-	int nScale = _pc.scaleSize();
+	int nOrient = _pc.Params().nOrient;
+	int nScale = _pc.Params().nScale;
 	vector<Mat> CS(nOrient);
 	for (int o = 0; o < nOrient; o++)
 	{
@@ -531,7 +722,7 @@ bool PtsCompare(const KeyPoint& lhs, const KeyPoint& rhs)
 
 void shun::RIFT::DetectFeature(Mat imgIn, vector<KeyPoint>& keyPoints)
 {
-	_pc.Calc(imgIn);
+	_pc.Prepare(imgIn);
 
 	Mat M, m;
 	_pc.Feature(M, m);
