@@ -1,7 +1,7 @@
 # ImageMatching
 Remote sensing image matching framework developed with c++. Algorithms included are as follows:
 - Phase congruency
-- Wavelet image pyramid constructing
+- Wavelet image pyramid
 - Nonlinear scale space
 - Mutual information (MI)
 - FFTShift, IFFTShift
